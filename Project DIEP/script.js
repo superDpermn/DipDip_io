@@ -35,6 +35,7 @@ function calculateColor(percentRemaining){
 class HealthBar{
     constructor(initX,initY,width,height,maxHp){
         this.width = width;
+        this.maxWidth = width;
         this.height = height;
         this.maxHp = maxHp;
         this.currentHp = maxHp;
@@ -45,18 +46,33 @@ class HealthBar{
         this.x = x - Math.floor(this.width/2);
         this.y = y - this.height - 15;
     }
-    draw(){
+    draw(xData,yData){
         ctx.fillStyle = calculateColor(this.currentHp/this.maxHp);
         ctx.strokeStyle = "rgb(50,50,50)";
         ctx.lineWidth = 2;
-        ctx.fillRect(this.x,this.y,Math.floor((this.currentHp/this.maxHp)*this.width),this.height);
-        ctx.strokeRect(this.x,this.y,Math.floor((this.currentHp/this.maxHp)*this.width),this.height);
+        ctx.fillRect(this.x - xData - 10, this.y - yData - 30,Math.floor((this.currentHp/this.maxHp)*this.width),this.height);
+        ctx.strokeRect(this.x - xData - 10, this.y - yData - 30,this.maxWidth,this.height);
+    }
+    getDamaged(amount){
+        //this method returns whether or not this object remains alive.
+        if(this.currentHp > amount && amount > 0){
+            this.currentHp -= amount;
+            return true;
+        }else{
+            return false;
+        }
+    }
+    setHp(amount){
+        if(amount >= 0){
+            this.currentHp = amount;
+        }
     }
 }
 
 class PlayerHealthBar{
     constructor(width,height,maxHp){
         this.width = width;
+        this.maxWidth = width;
         this.height = height;
         this.maxHp = maxHp;
         this.currentHp = maxHp;
@@ -65,8 +81,21 @@ class PlayerHealthBar{
         ctx.fillStyle = calculateColor(this.currentHp/this.maxHp);
         ctx.strokeStyle = "rgb(50,50,50)";
         ctx.lineWidth = 2;
-        ctx.fillRect(Math.floor(canvas.width/2 - this.width/2),Math.floor(canvas.height/2) - 80,this.width,this.height);
-        ctx.strokeRect(Math.floor(canvas.width/2 - this.width/2),Math.floor(canvas.height/2) - 80,this.width,this.height);
+        ctx.fillRect(Math.floor(canvas.width/2 - this.width/2),Math.floor(canvas.height/2) - 80,this.width * (this.currentHp/this.maxHp),this.height);
+        ctx.strokeRect(Math.floor(canvas.width/2 - this.width/2),Math.floor(canvas.height/2) - 80,this.maxWidth,this.height);
+    }
+    setHp(amount){
+        if(amount >= 0){
+            this.currentHp = amount;
+        }   
+    }
+    getDamaged(amount){
+        if(this.currentHp > amount && amount > 0){
+            this.currentHp -= amount;
+            return true;
+        }else{
+            return false;
+        }
     }
 }
 
@@ -78,7 +107,10 @@ class Player{
         this.y = Math.floor(this.bounds[1]/2);
         this.renderDistance = 600 + canvas.width;
         this.speed = 5;
-        this.healthBar = new PlayerHealthBar(100,15,500);
+        this.atkDamage = 5;
+        this.isInvincible = false;
+        this.isAlive = true;
+        this.healthBar = new PlayerHealthBar(100,15,5000);
     }
     draw(){
         ctx.fillStyle = "rgb(70,100,150)";
@@ -143,7 +175,7 @@ class gameObject{
         return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < playerObject.renderDistance;
     }
     isColliding(playerObject){
-        return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < playerObject.radius + this.width + 10;
+        return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < 100;
     }
 }
 
@@ -192,6 +224,8 @@ class Square extends gameObject{
         this.color = "rgb(200,200,50)";
         this.borderColor = "rgb(100,100,25)";
         this.points = 10;
+        this.type = "SQUARE";
+        this.healthBar = new HealthBar(this.x,this.y,70,10,500);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
@@ -199,6 +233,7 @@ class Square extends gameObject{
         ctx.strokeStyle = this.borderColor;
         ctx.lineWidth = 10;
         ctx.strokeRect(this.x - xData, this.y - yData, this.width, this.height);
+        this.healthBar.draw(xData,yData);
     }
 }
 
@@ -209,18 +244,21 @@ class Triangle extends gameObject{
         this.borderColor = "rgb(100,75,60)";
         this.scale = 1;
         this.points = 35;
+        this.type = "TRIANGLE";
+        this.healthBar = new HealthBar(this.x,this.y,80,10,1500);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
         ctx.beginPath();
-        ctx.moveTo(this.x - xData, this.y - yData);
-        ctx.lineTo(this.x - xData - (25*this.scale),this.y - yData - (43*this.scale));
-        ctx.lineTo(this.x - xData - (50*this.scale),this.y - yData);
+        ctx.moveTo(this.x - xData + (50*this.scale), this.y - yData + (50*this.scale));
+        ctx.lineTo(this.x - xData + (25*this.scale),this.y - yData + (7*this.scale));
+        ctx.lineTo(this.x - xData,this.y - yData + (50*this.scale));
         ctx.closePath();
         ctx.fill();
         ctx.strokeStyle = this.borderColor;
         ctx.lineWidth = 10;
         ctx.stroke();
+        this.healthBar.draw(xData,yData);
     }
 }
 
@@ -261,8 +299,8 @@ class ObjectGenerator{
             if(this.counters[iter] > this.counterMax[iter]){
                 this.counters[iter] = 0;
                 if(this.objectCounts[iter] < this.objectCountsMax[iter]){
-                    this.objectCounts[iter]++;
                     this.generate(this.objectIDlist[iter], Math.floor(Math.random() * (this.mapW - 100) + 51), Math.floor(Math.random() * (this.mapH - 100) + 51));
+                    this.objectCounts[iter]++;
                 }
             }
         }
@@ -275,6 +313,21 @@ class ObjectGenerator{
         this.mapW = map.MapWidth;
         this.mapH = map.MapHeight;
     }
+    remove(obj){
+        switch(obj.type){
+            case "SQUARE":
+                if(this.objectCounts[0]>0)
+                    this.objectCounts[0]--;
+                break;
+            case "TRIANGLE":
+                if(this.objectCounts[1]>0)
+                    this.objectCounts[1]--;
+                break;
+
+            default:
+                break;
+        }
+    }
 }
 
 class Game{
@@ -283,6 +336,7 @@ class Game{
         this.map = mapObject;
         this.generator = generator;
         this.objects = [];
+        this.removalList = [];
     }
     Render(){
         this.map.draw(this.player);
@@ -300,20 +354,45 @@ class Game{
         this.objects.push(obj);
     }
     RemoveObject(obj){
+        this.generator.remove(obj);
         this.objects.splice(this.objects.indexOf(obj),1);
     }
     CollisionUpdate(){
         for(let index = 0; index < this.objects.length; index++){
             if(this.objects[index].isColliding(this.player)){
-                
+
+                if(!this.objects[index].healthBar.getDamaged(this.player.atkDamage)){
+                    this.removalList.push(this.objects[index]);
+                }
+                if(!this.player.isInvincible){
+                    let tempDMG;
+                    switch(this.objects[index].type){
+                        case "SQUARE":
+                            tempDMG = 10;
+                            break;
+                        case "TRIANGLE":
+                            tempDMG = 25;
+                            break;
+                        //add object types as needed.
+                        default:
+                            tempDMG = 0;
+                            break;
+                    }
+                    this.player.isAlive = this.player.healthBar.getDamaged(tempDMG);
+                    this.player.isInvincible = true;
+                }
             }
         }
+        for(let k=0;k<this.removalList.length;k++){
+            this.RemoveObject(this.removalList[k]);
+        }
+        this.removalList = [];
     }
 }
 
 //syntax: [[maxCount,spawnCD],...]
-const mainGenerator = new ObjectGenerator([[30,60],[20,80]]);
-const mainMap = new GameMap(30,30,100,100);
+const mainGenerator = new ObjectGenerator([[5,60],[10,80]]);
+const mainMap = new GameMap(30,30,50,50);
 const MainGame = new Game(mainMap,mainGenerator);
 
 mainGenerator.setGame(MainGame);
@@ -340,6 +419,7 @@ function animate(){
     if(deltaTime > frameInterval){
         deltaTime = 0;
         handleInput();
+        MainGame.CollisionUpdate();
     }
 }
 
