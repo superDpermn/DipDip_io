@@ -170,12 +170,45 @@ class gameObject{
         this.y = y;
         this.width = width;
         this.height = height;
+        this.xSpeed = 0;
+        this.ySpeed = 0;
+        this.isMoving = false;
+    }
+    moveTo(x,y){
+        this.x = x;
+        this.y = y;
     }
     isVisible(playerObject){
         return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < playerObject.renderDistance;
     }
     isColliding(playerObject){
         return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < 100;
+    }
+    UpdatePosition(){
+        this.x += this.xSpeed;
+        this.y += this.ySpeed;
+
+        if(Math.abs(xSpeed) < 0.3){
+            this.xSpeed = 0;
+        }
+        else{
+            this.xSpeed += this.xSpeed > 0 ? -0.1 : 0.1;
+        }
+
+        if(Math.abs(ySpeed) < 0.3){
+            this.ySpeed = 0;
+        }
+        else{
+            this.ySpeed += this.ySpeed > 0 ? -0.1 : 0.1;
+        }
+        if(this.xSpeed == 0 && this.ySpeed == 0){
+            this.isMoving = false;
+        }
+    }
+    addForceFrom(x,y){
+        this.isMoving = true;
+        this.xSpeed = this.x > x ? 1 : -1;
+        this.ySpeed = this.y > y ? 1 : -1;
     }
 }
 
@@ -225,6 +258,7 @@ class Square extends gameObject{
         this.borderColor = "rgb(100,100,25)";
         this.points = 10;
         this.type = "SQUARE";
+        this.dir = 0;
         this.healthBar = new HealthBar(this.x,this.y,70,10,500);
     }
     draw(xData,yData){
@@ -337,6 +371,7 @@ class Game{
         this.generator = generator;
         this.objects = [];
         this.removalList = [];
+        this.distanceTreshold = 150; //this value represents the minimum distance two objects can have without colliding
     }
     Render(){
         this.map.draw(this.player);
@@ -356,6 +391,19 @@ class Game{
     RemoveObject(obj){
         this.generator.remove(obj);
         this.objects.splice(this.objects.indexOf(obj),1);
+    }
+    objectCollisionUpdate(){
+        for(let index1 = 0; index1 < this.objects.length; index1++){
+            for(let index2 = index1+1; index2 < this.objects.length; index2++){
+                if(dist(this.objects[index1].x,this.objects[index2].x,this.objects[index1].y,this.objects[index2].y) < this.distanceTreshold){
+                    //push objects in the opposite direction.
+                    this.objects[index1].addForceFrom(this.objects[index2].x,this.objects[index2].y);
+                }
+            }
+        }
+    }
+    objectMovementUpdate(){
+
     }
     CollisionUpdate(){
         for(let index = 0; index < this.objects.length; index++){
@@ -380,6 +428,7 @@ class Game{
                     }
                     this.player.isAlive = this.player.healthBar.getDamaged(tempDMG);
                     this.player.isInvincible = true;
+                    //add something to make the player not invincible again.
                 }
             }
         }
@@ -387,11 +436,15 @@ class Game{
             this.RemoveObject(this.removalList[k]);
         }
         this.removalList = [];
+        this.objectMovementUpdate();
+        this.objectCollisionUpdate();
     }
+    
 }
 
 //syntax: [[maxCount,spawnCD],...]
-const mainGenerator = new ObjectGenerator([[5,60],[10,80]]);
+const mainGenerator = new ObjectGenerator([[50,60],[10,80]]);
+
 const mainMap = new GameMap(30,30,50,50);
 const MainGame = new Game(mainMap,mainGenerator);
 
@@ -399,6 +452,7 @@ mainGenerator.setGame(MainGame);
 mainGenerator.setMap(mainMap);
 
 let deltaTime = 0;
+let deltaTime2 = 0;
 let timeStamp = 0;
 let lastTime = 0;
 let fps = 30;
@@ -411,7 +465,8 @@ function animate(){
     timeStamp = requestAnimationFrame(animate);
 
     let tempTime = timeStamp - lastTime;
-    deltaTime += tempTime
+    deltaTime += tempTime;
+    deltaTime2 += tempTime;
     MainGame.generator.updateTimers(tempTime);
 
     lastTime = timeStamp;
@@ -419,7 +474,12 @@ function animate(){
     if(deltaTime > frameInterval){
         deltaTime = 0;
         handleInput();
+        
+    }
+    if(deltaTime2 > 30){ //code here will execute approximately every second.
+        deltaTime2 = 0;
         MainGame.CollisionUpdate();
+        console.log("update!");
     }
 }
 
