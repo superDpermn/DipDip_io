@@ -101,6 +101,9 @@ class PlayerHealthBar{
         ctx.lineWidth = 2;
         ctx.fillRect(Math.floor(canvas.width/2 - this.width/2),Math.floor(canvas.height/2) - 80,this.width * (this.currentHp/this.maxHp),this.height);
         ctx.strokeRect(Math.floor(canvas.width/2 - this.width/2),Math.floor(canvas.height/2) - 80,this.maxWidth,this.height);
+        ctx.font = "10px sans-serif";
+        ctx.fillStyle = "black";
+        ctx.fillText(this.currentHp.toString() + " / " + this.maxHp.toString(),Math.floor(canvas.width/2 - this.width/2),Math.floor(canvas.height/2) - 85);
     }
     setHp(amount){
         if(amount >= 0){
@@ -134,15 +137,74 @@ class PlayerHealthBar{
     }
 }
 
+class playerGUI{
+    constructor(playerObject){
+        this.player = playerObject;
+        this.xp = 0;
+        this.level = 1;
+        this.maxLevel = 45;
+        this.levelUpTreshold = 45;
+        this.isMaxLevel = false;
+        this.width = 300;
+        this.height = 40;
+        this.maxWidth = 300;
+        this.x = Math.floor((canvas.width - this.width)/2);
+        this.y = Math.floor(canvas.height - this.height) - 50;
+        this.xpCurve = 1.2;
+        this.hpCurve = 1.2;
+    }
+    draw(){
+        ctx.fillStyle = "rgb(212, 113, 254)";
+        ctx.strokeStyle = "rgb(97, 0, 83)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(this.x,this.y,this.width,this.height,15);
+        ctx.stroke();
+        ctx.closePath();
+        ctx.beginPath();
+        ctx.roundRect(this.x,this.y,this.width*this.xp/this.levelUpTreshold,this.height,15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "black";
+        ctx.font = "20px sans-serif";
+        ctx.fillText(this.xp.toString() + " / " + (this.levelUpTreshold).toString() + "   level: " + this.level.toString(),this.x-80+Math.round(this.width/2),this.y+10+Math.round(this.height/2),this.width-100);
+    }
+    addXP(xp){
+        this.xp += xp;
+        this.checkLevelUp();
+    }
+    checkLevelUp(){
+        if(this.xp > this.levelUpTreshold){
+            this.xp = 0;
+            this.levelUp();
+        }
+    }
+    levelUp(){
+        if(this.level < this.maxLevel){
+            this.level++;
+            this.levelUpTreshold = Math.round(this.levelUpTreshold*this.xpCurve);
+            this.player.healthBar.maxHp = Math.round(this.player.healthBar.maxHp*this.hpCurve);
+            this.player.healthBar.regenAmount++;
+            clearTimeout(this.player.healthBar.timeoutID);
+            this.player.healthBar.playerRegen();
+            this.player.healthBar.isInvincible = true;
+            setTimeout(function(){MainGame.player.isInvincible = false;},2000);
+        }else{
+            this.isMaxLevel = true;
+        }
+    }
+}
+
 class Player{
     constructor(mapObject){
         this.radius = 50;
         this.bounds = [mapObject.MapWidth - canvas.width,mapObject.MapHeight - canvas.height - 5];
         this.x = Math.floor(this.bounds[0]/2);
         this.y = Math.floor(this.bounds[1]/2);
+        this.GUI = new playerGUI(this);
         this.renderDistance = 600 + canvas.width;
         this.speed = 5;
-        this.atkDamage = 10;
+        this.atkDamage = 100;
         this.isInvincible = false;
         this.isAlive = true;
         this.healthBar = new PlayerHealthBar(100,15,1500);
@@ -155,14 +217,21 @@ class Player{
         this.dirChangeCompensation = 0.2;
     }
     draw(){
-        ctx.fillStyle = "rgb(70,100,150)";
+        if(this.isAlive){
+            ctx.fillStyle = "rgb(70,100,150)";
+            ctx.strokeStyle = "rgb(35,50,75)";
+        }else{
+            ctx.fillStyle = "rgb(150,100,70)";
+            ctx.strokeStyle = "rgb(75,50,35)";
+        }
         ctx.beginPath();
         ctx.arc(canvas.width/2,canvas.height/2,this.radius,0,Math.PI*2);
         ctx.fill();
-        ctx.strokeStyle = "rgb(35,50,75)";
+        
         ctx.lineWidth = 5;
         ctx.stroke();
         this.healthBar.draw();
+        this.GUI.draw();
     }
     moveUp(){
         if(this.vSlow){
@@ -230,6 +299,11 @@ class Player{
         }
         if(this.vSlow){
             this.slowVertical();
+        }
+    }
+    onDestroyObject(points){
+        if(points > 0){
+            this.GUI.addXP(points);
         }
     }
 }
@@ -542,6 +616,7 @@ class Game{
     RemoveObject(obj){
         this.generator.remove(obj);
         this.objects.splice(this.objects.indexOf(obj),1);
+        this.player.onDestroyObject(obj.points);
     }
     objectCollisionUpdate(){
         for(let index1 = 0; index1 < this.objects.length; index1++){
@@ -572,17 +647,19 @@ class Game{
                     let tempDMG;
                     switch(this.objects[index].type){
                         case "SQUARE":
-                            tempDMG = 10;
+                            tempDMG = 8;
                             break;
                         case "TRIANGLE":
-                            tempDMG = 25;
+                            tempDMG = 18;
                             break;
                         //add object types as needed.
                         default:
                             tempDMG = 0;
                             break;
                     }
-                    this.player.isAlive = this.player.healthBar.getDamaged(tempDMG);
+                    if(this.player.isAlive && !this.player.isInvincible){
+                        this.player.isAlive = this.player.healthBar.getDamaged(tempDMG);
+                    }
                 }
             }
         }
@@ -600,7 +677,7 @@ class Game{
 }
 
 //syntax: [[maxCount,spawnCD],...]
-const mainGenerator = new ObjectGenerator([[35,60],[20,80]]);
+const mainGenerator = new ObjectGenerator([[50,20],[35,30]]);
 
 const mainMap = new GameMap(50,50,100,100);
 const MainGame = new Game(mainMap,mainGenerator);
@@ -632,9 +709,8 @@ function animate(){
         deltaTime = 0;
         handleInput();
         MainGame.objectMovementUpdate();
-        
     }
-    if(deltaTime2 > 3){ //code here will execute approximately every second.
+    if(deltaTime2 > 3){ //code here will execute slower compared to deltaTime 1
         deltaTime2 = 0;
         MainGame.CollisionUpdate();
         MainGame.PlayerUpdate();
