@@ -9,6 +9,19 @@ canvas.height = window.innerHeight;
 // });
 //your code here
 
+function thisWayUp(keyCode){
+    switch(keyCode){
+        case 'w':
+        case 's':
+            MainGame.player.startVslow();
+            break;
+        case 'a':
+        case 'd':
+            MainGame.player.startHslow();
+            break;
+    }
+}
+
 //Autocompleted inputHandler setup
 const pressedKeys = [];
 
@@ -23,6 +36,7 @@ window.addEventListener('keydown',function(event){
 window.addEventListener('keyup',function(event){
     if(event.key.length == 1 && pressedKeys.includes(event.key)){
         pressedKeys.splice(pressedKeys.indexOf(event.key),1);
+        thisWayUp(event.key);
     }
 });
 
@@ -128,10 +142,17 @@ class Player{
         this.y = Math.floor(this.bounds[1]/2);
         this.renderDistance = 600 + canvas.width;
         this.speed = 5;
-        this.atkDamage = 5;
+        this.atkDamage = 10;
         this.isInvincible = false;
         this.isAlive = true;
         this.healthBar = new PlayerHealthBar(100,15,1500);
+        this.ySpeed = 0;
+        this.xSpeed = 0;
+        this.hSlow = false;
+        this.vSlow = false;
+        this.lastHorizontalMoveLeft = false;
+        this.lastVerticalMoveUp = false;
+        this.dirChangeCompensation = 0.2;
     }
     draw(){
         ctx.fillStyle = "rgb(70,100,150)";
@@ -144,16 +165,72 @@ class Player{
         this.healthBar.draw();
     }
     moveUp(){
-        if(this.y-this.radius > -canvas.height/2){this.y -= this.speed;}
+        if(this.vSlow){
+            this.ySpeed = this.dirChangeCompensation;
+        }this.vSlow = false;
+        if(this.y-this.radius > -canvas.height/2){
+            this.ySpeed += this.ySpeed < this.speed ? 0.1 : 0;
+            this.y -= this.ySpeed;
+        }this.lastVerticalMoveUp = true;
     }
     moveDown(){
-        if(this.y+this.radius < this.bounds[1] + canvas.height/2){this.y += this.speed;}
+        if(this.vSlow){
+            this.ySpeed = this.dirChangeCompensation;
+        }this.vSlow = false;
+        if(this.y+this.radius < this.bounds[1] + canvas.height/2){
+            this.ySpeed += this.ySpeed < this.speed ? 0.1 : 0;
+            this.y += this.ySpeed;
+        }this.lastVerticalMoveUp = false;
     }
     moveLeft(){
-        if(this.x-this.radius > -canvas.width/2){this.x -= this.speed;}
+        if(this.hSlow){
+            this.xSpeed = this.dirChangeCompensation;
+        }this.hSlow = false;
+        if(this.x-this.radius > -canvas.width/2){
+            this.xSpeed += this.xSpeed < this.speed ? 0.1 : 0;
+            this.x -= this.xSpeed;
+        }this.lastHorizontalMoveLeft = true;
     }
     moveRight(){
-        if(this.x+this.radius < this.bounds[0] + canvas.width/2){this.x += this.speed;}
+        if(this.hSlow){
+            this.xSpeed = this.dirChangeCompensation;
+        }this.hSlow = false;
+        if(this.x+this.radius < this.bounds[0] + canvas.width/2){
+            this.xSpeed += this.xSpeed < this.speed ? 0.1 : 0;
+            this.x += this.xSpeed;
+        }this.lastHorizontalMoveLeft = false;
+    }
+    slowHorizontal(){
+        if(this.xSpeed > 0.3){
+            this.xSpeed -= Math.floor(this.xSpeed * 10) / 50;
+            this.x += this.lastHorizontalMoveLeft ? -this.xSpeed : this.xSpeed;
+        }else{
+            this.xSpeed = 0;
+            this.hSlow = false;
+        }
+    }
+    slowVertical(){
+        if(this.ySpeed > 0.3){
+            this.ySpeed -= Math.floor(this.ySpeed * 10) / 50;
+            this.y += this.lastVerticalMoveUp ? -this.ySpeed : this.ySpeed;
+        }else{
+            this.ySpeed = 0;
+            this.vSlow = false;
+        }
+    }
+    startHslow(){
+        this.hSlow = true;
+    }
+    startVslow(){
+        this.vSlow = true;
+    }
+    MovementUpdate(){
+        if(this.hSlow){
+            this.slowHorizontal();
+        }
+        if(this.vSlow){
+            this.slowVertical();
+        }
     }
 }
 
@@ -232,12 +309,15 @@ class gameObject{
 class Tile extends gameObject{
     constructor(adjustedX,adjustedY,width,height,colorStr){
         super(adjustedX,adjustedY,width,height);
-        this.type = "TILE";
+        this.type = "TILE0";
         this.color = colorStr
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
         ctx.fillRect(this.x - xData, this.y - yData, this.width, this.height);
+        ctx.strokeStyle = "rgb(100,100,100)";
+        ctx.lineWidth = 3;
+        ctx.strokeRect(this.x - xData, this.y - yData, this.width, this.height);
     }
 }
 
@@ -250,12 +330,13 @@ class GameMap{
         this.MapWidth = this.Xcount * this.tileWidth;
         this.MapHeight = this.Ycount * this.tileHeight;
         this.MapData = [];
-        let tempColor = "rgb(100,100,100)";
+        let tempColor;
+        let tempType;
         for(let i = 0; i < tileX; i++){
             for(let j = 0; j < tileY; j++){
-                if(i == 0 || i == tileX - 1 || j == 0 || j == tileY - 1){tempColor = "rgb(100,100,100)";}
-                else{tempColor = "gray";}
-                this.MapData.push(new Tile(i*tileW,j*tileH,tileW,tileH,tempColor));
+                if(i <= 1 || i >= tileX - 2 || j <= 1 || j >= tileY - 2){tempColor = "rgb(120,120,120)";tempType = "TILE1";}
+                else{tempColor = "rgb(150,150,150)";tempType = "TILE0";}
+                this.MapData[this.MapData.push(new Tile(i*tileW,j*tileH,tileW,tileH,tempColor)) - 1].type = tempType;
             }
         }
     }
@@ -513,6 +594,7 @@ class Game{
     }
     PlayerUpdate(){
         this.player.healthBar.regenUpdate(this.player.isAlive);
+        this.player.MovementUpdate();
     }
     
 }
@@ -520,7 +602,7 @@ class Game{
 //syntax: [[maxCount,spawnCD],...]
 const mainGenerator = new ObjectGenerator([[35,60],[20,80]]);
 
-const mainMap = new GameMap(30,30,150,150);
+const mainMap = new GameMap(50,50,100,100);
 const MainGame = new Game(mainMap,mainGenerator);
 
 mainGenerator.setGame(MainGame);
