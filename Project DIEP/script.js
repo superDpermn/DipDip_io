@@ -30,6 +30,9 @@ window.addEventListener('keydown',function(event){
         if(['w','a','s','d',' '].includes(event.key)){
             pressedKeys.push(event.key);
         }
+        else if(event.key == "e"){
+            MainGame.player.enableAimBot = !MainGame.player.enableAimBot;
+        }
     }
 });
 
@@ -45,8 +48,13 @@ const mouse = {
     y:500
 }
 
+const autoCursor = {
+    x:500,
+    y:500
+}
+
 function onMouseClick(){
-    if(!MainGame.player.OnAttackCooldown){
+    if(!MainGame.player.OnAttackCooldown && !MainGame.player.enableAimBot){
         MainGame.player.attackTowards(mouse.x,mouse.y);
     }
 }
@@ -168,14 +176,14 @@ class playerGUI{
         this.xp = 0;
         this.level = 1;
         this.maxLevel = 45;
-        this.levelUpTreshold = 45;
+        this.levelUpTreshold = 200;
         this.isMaxLevel = false;
         this.width = 300;
         this.height = 40;
         this.maxWidth = 300;
         this.x = Math.floor((canvas.width - this.width)/2);
         this.y = Math.floor(canvas.height - this.height) - 50;
-        this.xpCurve = 1.2;
+        this.xpCurve = 1.05;
         this.hpCurve = 1.05;
     }
     draw(){
@@ -203,7 +211,7 @@ class playerGUI{
     }
     checkLevelUp(){
         if(this.xp > this.levelUpTreshold){
-            this.xp = 0;
+            this.xp -= this.levelUpTreshold;
             this.levelUp();
         }
     }
@@ -288,7 +296,8 @@ class Player{
         this.GUI = new playerGUI(this);
         this.renderDistance = 600 + canvas.width;
         this.speed = 5;
-        this.atkDamage = 50;
+        this.atkDamage = 45;
+        this.range = 600;
         this.OnAttackCooldown = false;
         this.attackTimer = 0;
         this.attackCooldown = 2;
@@ -304,14 +313,15 @@ class Player{
         this.dirChangeCompensation = 0.2;
         this.barrelLength = 50;
         this.bulletSpeed = 10;
-        this.bulletPenetration = 4;
+        this.bulletPenetration = 2;
         this.guns = [new Gun(this,36,50,-3,-18,0)];
+        this.enableAimBot = false;
         //new Gun(this,30,50,0,-15,Math.PI/10),new Gun(this,30,50,0,-15,-Math.PI/10),  other guns here
     }
     draw(){
         if(this.isAlive){
-            ctx.fillStyle = "rgb(70,100,150)";
-            ctx.strokeStyle = "rgb(35,50,75)";
+            ctx.fillStyle = "rgb(87, 139, 228)";
+            ctx.strokeStyle = "rgb(56, 93, 156)";
         }else{
             ctx.fillStyle = "rgb(150,100,70)";
             ctx.strokeStyle = "rgb(75,50,35)";
@@ -343,6 +353,12 @@ class Player{
             else{
                 this.OnAttackCooldown = false;
             }
+        }
+    }
+    aimBotUpdate(obj){
+        if(!this.OnAttackCooldown){
+            this.attackTowards(obj.x - this.x,obj.y - this.y);
+            this.rotateGuns(obj.x - this.x,obj.y - this.y);
         }
     }
     attackTowards(x,y){
@@ -478,6 +494,9 @@ class gameObject{
     isColliding(playerObject){
         return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < 100;
     }
+    isInPlayerRange(playerObject){
+        return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < playerObject.range;
+    }
     isCollidingProj(proj){
         return dist(this.x + (this.width/2),proj.x,this.y + (this.height/2),proj.y) < 80;
     }
@@ -538,8 +557,8 @@ class Projectile extends gameObject{
         this.destroyMe = false;
         this.destroyAnimationFrame = 0;
         this.destroyAnimationFrameMax = 5;
-        this.color = "rgba(230, 81, 55, 1)";
-        this.borderColor = "rgba(115, 40, 22, 1)";
+        this.color = "rgba(0, 190, 230, 1)";
+        this.borderColor = "rgba(12, 107, 128, 1)";
         this.colorAlpha = 1;
         this.type = "PROJECTILE";
     }
@@ -576,8 +595,8 @@ class Projectile extends gameObject{
             this.destroyAnimationFrame++;
             this.colorAlpha = 1 - (Math.round(100 * this.destroyAnimationFrame / this.destroyAnimationFrameMax) / 100);
             if(this.colorAlpha > 0 && this.colorAlpha <= 1){
-                this.color = "rgba(230, 81, 55, "+ this.colorAlpha.toString() +")";
-                this.borderColor = "rgba(115, 40, 22, "+ this.colorAlpha.toString() +")";
+                this.color = "rgba(0, 190, 230, "+ this.colorAlpha.toString() +")";
+                this.borderColor = "rgba(12, 107, 128, "+ this.colorAlpha.toString() +")";
             }
             return false;
         }
@@ -724,8 +743,8 @@ class Triangle extends gameObject{
 class Pentagon extends gameObject{
     constructor(x,y){
         super(x,y,70,65);
-        this.color = "rgb(50, 70, 254)";
-        this.borderColor = "rgb(25,35,127)";
+        this.color = "rgb(99, 95, 209)";
+        this.borderColor = "rgb(62, 59, 144)";
         this.scale = 1;
         this.points = 100;
         this.type = "PENTAGON";
@@ -903,7 +922,7 @@ class Game{
         }
     }
     projectileCollisionUpdate(){
-        for(let i = 0; i < this.projectiles.length; i++){
+        for(let i = this.projectiles.length-1; i > 0; i--){
             for(let j = 0; j < this.objects.length; j++){
                 if(this.objects[j].isCollidingProj(this.projectiles[i])){
                     if(!this.objects[j].healthBar.getDamaged(this.projectiles[i].getDamage())){
@@ -941,6 +960,8 @@ class Game{
     }
     CollisionUpdate(){
         for(let index = 0; index < this.objects.length; index++){
+            let inPlayerRange = [];
+            let rangeObjectList = [];
             if(this.objects[index].isColliding(this.player)){
 
                 if(!this.objects[index].healthBar.getDamaged(this.player.atkDamage)){
@@ -968,6 +989,23 @@ class Game{
                     if(this.player.isAlive && !this.player.isInvincible){
                         this.player.isAlive = this.player.healthBar.getDamaged(tempDMG);
                     }
+                }
+            }
+            if(this.player.enableAimBot){
+                if(this.objects[index].isInPlayerRange(this.player)){
+                    inPlayerRange.push(dist(this.objects[index].x,this.player.x,this.objects[index].y,this.player.y));
+                    rangeObjectList.push(this.objects[index]);
+                }
+                if(inPlayerRange.length > 0){
+                    let minVal = Number.POSITIVE_INFINITY;
+                    let minDex = 0;
+                    for(let t = 0; t < inPlayerRange.length; t++){
+                        if(inPlayerRange[t] < minVal){
+                            minVal = inPlayerRange[t];
+                            minDex = t;
+                        }
+                    }
+                    this.player.aimBotUpdate(rangeObjectList[minDex]);
                 }
             }
         }
@@ -1020,7 +1058,8 @@ function animate(){
         handleInput();
         MainGame.objectMovementUpdate();
         MainGame.projectileMovementUpdate();
-        MainGame.player.rotateGuns(mouse.x,mouse.y);
+        if(!MainGame.player.enableAimBot)
+            MainGame.player.rotateGuns(mouse.x,mouse.y);
     }
     if(deltaTime2 > 3){ //code here will execute slower compared to deltaTime 1
         deltaTime2 = 0;
