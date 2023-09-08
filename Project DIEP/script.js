@@ -27,7 +27,7 @@ const pressedKeys = [];
 
 window.addEventListener('keydown',function(event){
     if(event.key.length == 1 && !event.repeat){
-        if(['w','a','s','d',' '].includes(event.key)){
+        if(['w','a','s','d',' '].includes(event.key) && !pressedKeys.includes(event.key)){
             pressedKeys.push(event.key);
         }
         else if(event.key == "e"){
@@ -187,7 +187,6 @@ class playerGUI{
         this.hpCurve = 1.05;
     }
     draw(){
-        
         ctx.strokeStyle = "rgb(75, 3, 42)";
         ctx.lineWidth = 3;
         ctx.beginPath();
@@ -210,7 +209,7 @@ class playerGUI{
         this.checkLevelUp();
     }
     checkLevelUp(){
-        if(this.xp > this.levelUpTreshold){
+        while(this.xp > this.levelUpTreshold){
             this.xp -= this.levelUpTreshold;
             this.levelUp();
         }
@@ -296,11 +295,11 @@ class Player{
         this.GUI = new playerGUI(this);
         this.renderDistance = 600 + canvas.width;
         this.speed = 5;
-        this.atkDamage = 45;
+        this.atkDamage = 35;
         this.range = 600;
         this.OnAttackCooldown = false;
         this.attackTimer = 0;
-        this.attackCooldown = 2;
+        this.attackCooldown = 3;
         this.isInvincible = false;
         this.isAlive = true;
         this.healthBar = new PlayerHealthBar(100,15,1500);
@@ -312,8 +311,8 @@ class Player{
         this.lastVerticalMoveUp = false;
         this.dirChangeCompensation = 0.2;
         this.barrelLength = 50;
-        this.bulletSpeed = 10;
-        this.bulletPenetration = 2;
+        this.bulletSpeed = 5;
+        this.bulletPenetration = 3;
         this.guns = [new Gun(this,36,50,-3,-18,0)];
         this.enableAimBot = false;
         //new Gun(this,30,50,0,-15,Math.PI/10),new Gun(this,30,50,0,-15,-Math.PI/10),  other guns here
@@ -444,7 +443,6 @@ class Player{
             this.GUI.addXP(points);
         }
     }
-
 }
 
 function Up(){MainGame.player.moveUp();}
@@ -643,15 +641,63 @@ class GameMap{
     }
 }
 
+class HitText{
+    constructor(startX,startY,text,r,g,b,magnitude){
+        this.x = startX;
+        this.y = startY;
+        this.text = text;
+        this.magnitude = magnitude;
+        this.MinSize = 35;
+        this.MaxSize = 100;
+        this.RED = r;
+        this.GREEN = g;
+        this.BLUE = b;
+        this.animationFrame = 0;
+        this.animationFrameMax = 20;
+        this.destroyMe = false;
+        this.moveUpPx = 15;
+        this.colorAlpha = 1;
+        this.color = "rgb(" + this.RED.toString() + ", " + this.GREEN.toString() + ", " + this.BLUE.toString() + ", " + this.colorAlpha.toString() + ")";
+    }
+    isVisible(playerObject){
+        return dist(this.x,playerObject.x + Math.floor(canvas.width/2),this.y,playerObject.y + Math.floor(canvas.height/2)) < playerObject.renderDistance;
+    }
+    calculateFont(){
+        return Math.min(Math.max(this.magnitude,this.MinSize),this.MaxSize).toString() + "px sans-serif";
+    }
+    draw(xData,yData){
+        ctx.fillStyle = this.color;
+        ctx.font = this.calculateFont();
+        ctx.fillText(this.text,this.x - xData,this.y - yData,500);
+    }
+    updateColor(){
+        this.color = "rgb(" + this.RED.toString() + ", " + this.GREEN.toString() + ", " + this.BLUE.toString() + ", " + this.colorAlpha.toString() + ")";
+    }
+    destroyUpdate(){
+        if(!this.destroyMe)
+            this.colorAlpha = (this.animationFrameMax - this.animationFrame)/this.animationFrameMax;
+        if(this.animationFrame < this.animationFrameMax){
+            this.animationFrame++;
+        }else{
+            this.destroyMe = true;
+        }
+        this.y--;
+        this.updateColor();
+        return this.destroyMe;
+    }
+}
+
 class Square extends gameObject{
     constructor(x,y){
-        super(x,y,50,50);
+        super(x,y,70,70);
         this.color = "rgb(200,200,50)";
         this.borderColor = "rgb(100,100,25)";
-        this.points = 10;
+        this.operand2 = Math.floor(Math.random() * 8 + 3);
+        this.operand1 = Math.floor(Math.random() * (this.operand2-1)) + 2;
+        this.points = this.operand1 * this.operand2;
         this.type = "SQUARE";
         this.dir = 0;
-        this.healthBar = new HealthBar(this.x,this.y,70,10,500);
+        this.healthBar = new HealthBar(this.x,this.y,70,10,20 * this.points);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
@@ -659,7 +705,13 @@ class Square extends gameObject{
         ctx.strokeStyle = this.borderColor;
         ctx.lineWidth = 10;
         ctx.strokeRect(this.x - xData, this.y - yData, this.width, this.height);
+        ctx.fillStyle = "black";
+        ctx.font = "20px sans-serif";
+        ctx.fillText(this.operand1.toString() + " x " + this.operand2.toString(),this.x - xData +12,this.y - yData + 40);
         this.healthBar.draw(xData,yData);
+    }
+    getActualPoints(){
+        return 50;
     }
     UpdatePosition(xBound,yBound){
         if(this.x+this.xSpeed > 100 && this.x+this.xSpeed < xBound - 100){
@@ -668,7 +720,7 @@ class Square extends gameObject{
         if(this.y+this.ySpeed > 100 && this.y+this.ySpeed < yBound - 100){
             this.y += this.ySpeed;
         }
-        this.healthBar.updatePos(this.x,this.y);
+        this.healthBar.updatePos(this.x + 12,this.y);
 
         if(Math.abs(this.xSpeed) < 0.3){
             this.xSpeed = 0;
@@ -691,13 +743,15 @@ class Square extends gameObject{
 
 class Triangle extends gameObject{
     constructor(x,y){
-        super(x,y,50,50);
+        super(x,y,75,75);
         this.color = "rgb(200,150,120)";
         this.borderColor = "rgb(100,75,60)";
-        this.scale = 1;
-        this.points = 35;
+        this.scale = 1.5;
+        this.operand2 = Math.floor(Math.random() * 8 + 3);
+        this.operand1 = Math.floor(Math.random() * (this.operand2-1)) + 2;
+        this.points = this.operand1 * this.operand2;
         this.type = "TRIANGLE";
-        this.healthBar = new HealthBar(this.x,this.y,80,10,1500);
+        this.healthBar = new HealthBar(this.x,this.y,80,10,30 * this.points);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
@@ -710,7 +764,13 @@ class Triangle extends gameObject{
         ctx.strokeStyle = this.borderColor;
         ctx.lineWidth = 10;
         ctx.stroke();
+        ctx.fillStyle = "white";
+        ctx.font = "bold 20px sans-serif";
+        ctx.fillText(this.operand1.toString() + " x " + this.operand2.toString(),this.x - xData + 10,this.y - yData + 65);
         this.healthBar.draw(xData,yData);
+    }
+    getActualPoints(){
+        return 150;
     }
     UpdatePosition(xBound,yBound){
         if(this.x+this.xSpeed > 100 && this.x+this.xSpeed < xBound - 100){
@@ -719,7 +779,7 @@ class Triangle extends gameObject{
         if(this.y+this.ySpeed > 100 && this.y+this.ySpeed < yBound - 100){
             this.y += this.ySpeed;
         }
-        this.healthBar.updatePos(this.x,this.y);
+        this.healthBar.updatePos(this.x + 15,this.y);
 
         if(Math.abs(this.xSpeed) < 0.3){
             this.xSpeed = 0;
@@ -742,13 +802,15 @@ class Triangle extends gameObject{
 
 class Pentagon extends gameObject{
     constructor(x,y){
-        super(x,y,70,65);
+        super(x,y,105,95);
         this.color = "rgb(99, 95, 209)";
         this.borderColor = "rgb(62, 59, 144)";
-        this.scale = 1;
-        this.points = 100;
+        this.scale = 1.5;
+        this.operand2 = Math.floor(Math.random() * 8 + 3);
+        this.operand1 = Math.floor(Math.random() * (this.operand2-1)) + 2;
+        this.points = this.operand1 * this.operand2;
         this.type = "PENTAGON";
-        this.healthBar = new HealthBar(this.x - 35,this.y - 10,80,10,5000);
+        this.healthBar = new HealthBar(this.x - 35,this.y - 10,80,10,50 * this.points);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
@@ -764,7 +826,13 @@ class Pentagon extends gameObject{
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+        ctx.fillStyle = "white";
+        ctx.font = "bold 20px sans-serif";
+        ctx.fillText(this.operand1.toString() + " x " + this.operand2.toString(),this.x - xData,this.y - yData +20);
         this.healthBar.draw(xData,yData);
+    }
+    getActualPoints(){
+        return 500;
     }
     UpdatePosition(xBound,yBound){
         if(this.x+this.xSpeed > 100 && this.x+this.xSpeed < xBound - 100){
@@ -883,8 +951,11 @@ class Game{
         this.generator = generator;
         this.objects = [];
         this.projectiles = [];
+        this.hitTexts = [];
         this.removalList = [];
         this.projRemovalList = [];
+        this.removeTextList = [];
+        this.getResultPoints = false; //whether or not point values are replaced by operation results.
         this.distanceTreshold = 120; //this value represents the minimum distance two objects can have without colliding
     }
     Render(){
@@ -897,6 +968,14 @@ class Game{
                 this.objects[index].draw(PX,PY);
             }
         }
+        for(let index2 = 0; index2 < this.projectiles.length; index2++){
+            this.projectiles[index2].draw();
+        }
+        for(let index1 = 0; index1 < this.hitTexts.length; index1++){
+            if(this.hitTexts[index1].isVisible(this.player)){
+                this.hitTexts[index1].draw(PX,PY);
+            }
+        }
         this.player.draw();
     }
     AddObject(obj){
@@ -905,10 +984,19 @@ class Game{
     AddProjectile(proj){
         this.projectiles.push(proj);
     }
+    AddHitText(hitText){
+        this.hitTexts.push(hitText);
+    }
     RemoveObject(obj){
         this.generator.remove(obj);
+        this.AddHitText(new HitText(obj.x - 30,obj.y - 30,obj.operand1.toString() + " x " + obj.operand2.toString()+ " = " + obj.points.toString(),200,200,20,obj.points));
         this.objects.splice(this.objects.indexOf(obj),1);
-        this.player.onDestroyObject(obj.points);
+        if(this.getResultPoints){
+            this.player.onDestroyObject(obj.points);
+        }
+        else{
+            this.player.onDestroyObject(obj.getActualPoints());
+        }
     }
     objectCollisionUpdate(){
         for(let index1 = 0; index1 < this.objects.length; index1++){
@@ -943,6 +1031,17 @@ class Game{
             this.objects[i].UpdatePosition(this.map.MapWidth,this.map.MapHeight);
         }
     }
+    hitTextUpdate(){
+        for(let index = 0; index < this.hitTexts.length; index++){
+            if(this.hitTexts[index].destroyUpdate()){
+                this.removeTextList.push(this.hitTexts[index]);
+            }
+        }
+        for(let index2 = 0; index2 < this.removeTextList.length; index2++){
+            this.hitTexts.splice(this.hitTexts.indexOf(this.removeTextList[index2]),1);
+        }
+        this.removeTextList = [];
+    }
     projectileMovementUpdate(){
         for(let j = 0; j < this.projectiles.length; j++){
             if(this.projectiles[j].UpdateProjectile()){
@@ -953,10 +1052,6 @@ class Game{
             this.projectiles.splice(this.projectiles.indexOf(this.projRemovalList[t]),1);
         }
         this.projRemovalList = [];
-
-        for(let index2 = 0; index2 < this.projectiles.length; index2++){
-            this.projectiles[index2].draw();
-        }
     }
     CollisionUpdate(){
         for(let index = 0; index < this.objects.length; index++){
@@ -1015,6 +1110,7 @@ class Game{
         this.removalList = [];
         this.objectCollisionUpdate();
         this.projectileCollisionUpdate();
+        this.hitTextUpdate();
     }
     PlayerUpdate(){
         this.player.healthBar.regenUpdate(this.player.isAlive);
