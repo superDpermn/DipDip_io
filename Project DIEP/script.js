@@ -9,6 +9,10 @@ canvas.height = window.innerHeight;
 // });
 //your code here
 
+const DEBUG = {
+    showHitboxes:true
+}
+
 function thisWayUp(keyCode){
     switch(keyCode){
         case 'w':
@@ -55,7 +59,7 @@ const autoCursor = {
 
 function onMouseClick(){
     if(!MainGame.player.OnAttackCooldown && !MainGame.player.enableAimBot){
-        MainGame.player.attackTowards(mouse.x,mouse.y);
+        MainGame.player.attack(mouse.x,mouse.y);
     }
 }
 
@@ -175,7 +179,7 @@ class playerGUI{
         this.player = playerObject;
         this.xp = 0;
         this.level = 1;
-        this.maxLevel = 45;
+        this.maxLevel = 100;
         this.levelUpTreshold = 200;
         this.isMaxLevel = false;
         this.width = 300;
@@ -208,6 +212,13 @@ class playerGUI{
         this.xp += xp;
         this.checkLevelUp();
     }
+    removeXP(xp){
+        if(this.xp - xp > 0){
+            this.xp -= xp;
+        }else{
+            this.xp = 0;
+        }
+    }
     checkLevelUp(){
         while(this.xp > this.levelUpTreshold){
             this.xp -= this.levelUpTreshold;
@@ -219,7 +230,7 @@ class playerGUI{
             this.level++;
             this.levelUpTreshold = Math.round(this.levelUpTreshold*this.xpCurve);
             this.player.healthBar.maxHp = Math.min(Math.round(this.player.healthBar.maxHp*this.hpCurve),5000);
-            this.player.atkDamage += 5;
+            this.player.atkDamage++;
             this.player.healthBar.regenAmount++;
             clearTimeout(this.player.healthBar.timeoutID);
             this.player.healthBar.playerRegen();
@@ -243,6 +254,8 @@ class Gun{
         this.rotation = 0; //in radians
         this.posX = canvas.width/2;
         this.posY = canvas.height/2;
+        this.lookX = 0;
+        this.lookY = 0;
     }
     draw(){
         ctx.fillStyle = "rgb(180,180,180)";
@@ -264,29 +277,35 @@ class Gun{
         ctx.translate(-this.posX,-this.posY);
     }
     rotate(x,y){
-        let tempX = x - this.posX;
-        let tempY = y - this.posY;
-        if(tempX > 0){
-            if(tempY < 0){
-                this.rotation = -Math.atan(-tempY/tempX);
+        this.lookX = x - this.posX;
+        this.lookY = y - this.posY;
+        if(this.lookX > 0){
+            if(this.lookY < 0){
+                this.rotation = -Math.atan(-this.lookY/this.lookX);
             }
-            else if(tempY > 0){
-                this.rotation = Math.atan(tempY/tempX);
+            else if(this.lookY > 0){
+                this.rotation = Math.atan(this.lookY/this.lookX);
             }
         }
-        else if(tempX < 0){
-            if(tempY < 0){
-                this.rotation = -Math.PI + Math.atan(tempY/tempX);
+        else if(this.lookX < 0){
+            if(this.lookY < 0){
+                this.rotation = -Math.PI + Math.atan(this.lookY/this.lookX);
             }
-            else if(tempY > 0){
-                this.rotation = -Math.PI - Math.atan(-tempY/tempX);
+            else if(this.lookY > 0){
+                this.rotation = -Math.PI - Math.atan(-this.lookY/this.lookX);
             }
         }
     }
 }
+class PlayerClass{ //in game class (tank type), not the code class...
+    constructor(tankType){
+        this.tankType = tankType;
+    }
+}
 
-class Player{
+class Player extends PlayerClass{
     constructor(game,mapObject){
+        super(0);
         this.game = game;
         this.radius = 50;
         this.bounds = [mapObject.MapWidth - canvas.width,mapObject.MapHeight - canvas.height - 5];
@@ -295,11 +314,13 @@ class Player{
         this.GUI = new playerGUI(this);
         this.renderDistance = 600 + canvas.width;
         this.speed = 5;
-        this.atkDamage = 35;
-        this.range = 600;
+        this.driftBack = false;
+        this.knockbackModifier = 3;
+        this.atkDamage = 25;
+        this.range = 600; //not actual range, represents aimbot activation range.
         this.OnAttackCooldown = false;
         this.attackTimer = 0;
-        this.attackCooldown = 3;
+        this.attackCooldown = 5;
         this.isInvincible = false;
         this.isAlive = true;
         this.healthBar = new PlayerHealthBar(100,15,1500);
@@ -311,9 +332,16 @@ class Player{
         this.lastVerticalMoveUp = false;
         this.dirChangeCompensation = 0.2;
         this.barrelLength = 50;
-        this.bulletSpeed = 5;
+        this.bulletSpeed = 10;
+        this.bulletRange = 1200;
         this.bulletPenetration = 3;
-        this.guns = [new Gun(this,36,50,-3,-18,0)];
+
+        this.gunAttackCooldowns = [0,0,0,0,0];
+        this.gunAttackCooldownsMax = [3,3,2,2,1];
+        this.barrelLengths = [40,40,50,50,60];
+        this.guns = [new Gun(this,30,40,0,-15,Math.PI/5),new Gun(this,30,40,0,-15,-Math.PI/5),new Gun(this,30,50,0,-15,Math.PI/10),new Gun(this,30,50,0,-15,-Math.PI/10),new Gun(this,36,60,-2,-18,0)];
+        this.OnAttackAnimation = false;
+
         this.enableAimBot = false;
         //new Gun(this,30,50,0,-15,Math.PI/10),new Gun(this,30,50,0,-15,-Math.PI/10),  other guns here
     }
@@ -356,19 +384,49 @@ class Player{
     }
     aimBotUpdate(obj){
         if(!this.OnAttackCooldown){
-            this.attackTowards(obj.x - this.x,obj.y - this.y);
+            this.attack(obj.x - this.x,obj.y - this.y);
             this.rotateGuns(obj.x - this.x,obj.y - this.y);
         }
     }
-    attackTowards(x,y){
+    StartAttackAnimation(){
+        this.OnAttackAnimation = true;
+        for(let index = 0; index < this.guns.length; index++){
+            this.gunAttackCooldowns[index] = this.gunAttackCooldownsMax[index];
+        }
+    }
+    attack(){
         this.OnAttackCooldown = true;
+        this.StartAttackAnimation();
         this.attackTimer = 0;
-        let myDist = dist(canvas.width/2,x,canvas.height/2,y);
+    }
+    fireAt(mouseX,mouseY,gunIndex){
+        let myDist = dist(mouseX,canvas.width/2,mouseY,canvas.height/2);
         if(myDist < 1){myDist = 1;}
-        let unitVector = [(x - canvas.width/2) / myDist, (y - canvas.height/2) / myDist];
-        let calculatedPos = [(this.barrelLength+this.radius) * unitVector[0] + this.x + canvas.width/2,(this.barrelLength+this.radius) * unitVector[1] + this.y + canvas.height/2];
+        let myCos = Math.cos(this.guns[gunIndex].rotation + this.guns[gunIndex].offsetRotation);
+        let mySin = Math.sin(this.guns[gunIndex].rotation + this.guns[gunIndex].offsetRotation);
+
+        let unitVector = [myCos,mySin];
+        let calculatedPos = [(this.x + canvas.width/2) + (this.barrelLengths[gunIndex]+this.radius) * myCos, (this.y + canvas.height/2) + (this.barrelLengths[gunIndex]+this.radius) * mySin];
         let calculatedSpeed = [this.bulletSpeed * unitVector[0],this.bulletSpeed * unitVector[1]];
-        this.game.AddProjectile(new Projectile(this,calculatedPos[0],calculatedPos[1],calculatedSpeed[0],calculatedSpeed[1],15,1500,this.atkDamage,this.bulletPenetration));
+        this.game.AddProjectile(new Projectile(this,calculatedPos[0],calculatedPos[1],calculatedSpeed[0],calculatedSpeed[1],15,this.bulletRange,this.atkDamage,this.bulletPenetration));
+    }
+    attackAnimation(){
+        let isStillAnimating = false;
+        if(this.OnAttackAnimation){
+            for(let index = 0; index < this.guns.length; index++){
+                if(this.gunAttackCooldowns[index] > 0){
+                    this.gunAttackCooldowns[index]--;
+                    isStillAnimating = true;
+                }
+                if(this.gunAttackCooldowns[index] == 0){
+                    this.fireAt(mouse.x,mouse.y,index);
+                    this.gunAttackCooldowns[index] = -1;
+                }
+            }
+        }
+        if(!isStillAnimating){
+            this.OnAttackAnimation = false;
+        }
     }
     moveUp(){
         if(this.vSlow){
@@ -496,7 +554,7 @@ class gameObject{
         return dist(this.x + (this.width/2),playerObject.x + Math.floor(canvas.width/2),this.y + (this.height/2),playerObject.y + Math.floor(canvas.height/2)) < playerObject.range;
     }
     isCollidingProj(proj){
-        return dist(this.x + (this.width/2),proj.x,this.y + (this.height/2),proj.y) < 80;
+        return dist(this.x + (this.width/2),proj.x,this.y + (this.height/2),proj.y) < dist(0,this.width/2,0,this.height/2)+proj.radius;
     }
     addForceFrom(x,y){
         if(!this.isMoving){
@@ -690,14 +748,14 @@ class HitText{
 class Square extends gameObject{
     constructor(x,y){
         super(x,y,70,70);
+        this.scale = 1;
         this.color = "rgb(200,200,50)";
         this.borderColor = "rgb(100,100,25)";
         this.operand2 = Math.floor(Math.random() * 8 + 3);
         this.operand1 = Math.floor(Math.random() * (this.operand2-1)) + 2;
         this.points = this.operand1 * this.operand2;
         this.type = "SQUARE";
-        this.dir = 0;
-        this.healthBar = new HealthBar(this.x,this.y,70,10,20 * this.points);
+        this.healthBar = new HealthBar(this.x,this.y,70,10,60 * this.points);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
@@ -708,6 +766,13 @@ class Square extends gameObject{
         ctx.fillStyle = "black";
         ctx.font = "20px sans-serif";
         ctx.fillText(this.operand1.toString() + " x " + this.operand2.toString(),this.x - xData +12,this.y - yData + 40);
+
+        if(DEBUG.showHitboxes){
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(this.x - xData,this.y - yData,this.width,this.height);
+        }
+
         this.healthBar.draw(xData,yData);
     }
     getActualPoints(){
@@ -743,22 +808,22 @@ class Square extends gameObject{
 
 class Triangle extends gameObject{
     constructor(x,y){
-        super(x,y,75,75);
+        super(x,y,80,80);
         this.color = "rgb(200,150,120)";
         this.borderColor = "rgb(100,75,60)";
-        this.scale = 1.5;
+        this.scale = 1;
         this.operand2 = Math.floor(Math.random() * 8 + 3);
         this.operand1 = Math.floor(Math.random() * (this.operand2-1)) + 2;
         this.points = this.operand1 * this.operand2;
         this.type = "TRIANGLE";
-        this.healthBar = new HealthBar(this.x,this.y,80,10,30 * this.points);
+        this.healthBar = new HealthBar(this.x,this.y,80,10,90 * this.points);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
         ctx.beginPath();
-        ctx.moveTo(this.x - xData + (50*this.scale), this.y - yData + (50*this.scale));
-        ctx.lineTo(this.x - xData + (25*this.scale),this.y - yData + (7*this.scale));
-        ctx.lineTo(this.x - xData,this.y - yData + (50*this.scale));
+        ctx.moveTo(this.x - xData + (80*this.scale), this.y - yData + (70*this.scale));
+        ctx.lineTo(this.x - xData + (40*this.scale),this.y - yData);
+        ctx.lineTo(this.x - xData,this.y - yData + (70*this.scale));
         ctx.closePath();
         ctx.fill();
         ctx.strokeStyle = this.borderColor;
@@ -767,6 +832,13 @@ class Triangle extends gameObject{
         ctx.fillStyle = "white";
         ctx.font = "bold 20px sans-serif";
         ctx.fillText(this.operand1.toString() + " x " + this.operand2.toString(),this.x - xData + 10,this.y - yData + 65);
+
+        if(DEBUG.showHitboxes){
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(this.x - xData,this.y - yData,this.width,this.height);
+        }
+
         this.healthBar.draw(xData,yData);
     }
     getActualPoints(){
@@ -802,15 +874,15 @@ class Triangle extends gameObject{
 
 class Pentagon extends gameObject{
     constructor(x,y){
-        super(x,y,105,95);
+        super(x,y,100,100);
         this.color = "rgb(99, 95, 209)";
         this.borderColor = "rgb(62, 59, 144)";
-        this.scale = 1.5;
+        this.scale = Math.min((this.width/100),(this.height/100));
         this.operand2 = Math.floor(Math.random() * 8 + 3);
         this.operand1 = Math.floor(Math.random() * (this.operand2-1)) + 2;
         this.points = this.operand1 * this.operand2;
         this.type = "PENTAGON";
-        this.healthBar = new HealthBar(this.x - 35,this.y - 10,80,10,50 * this.points);
+        this.healthBar = new HealthBar(this.x - 35,this.y - 10,80,10,150 * this.points);
     }
     draw(xData,yData){
         ctx.fillStyle = this.color;
@@ -818,18 +890,25 @@ class Pentagon extends gameObject{
         ctx.lineWidth = 10;
         
         ctx.beginPath();
-        ctx.moveTo(this.x + 25 - xData - (22*this.scale),this.y - yData + 40 + (10*this.scale));
-        ctx.lineTo(this.x + 25 - xData + (22*this.scale),this.y - yData + 40 + (10*this.scale));
-        ctx.lineTo(this.x + 25 - xData + (35*this.scale),this.y - yData + 40 - (28*this.scale));
-        ctx.lineTo(this.x + 25 - xData,this.y - yData + 40 - (55*this.scale));
-        ctx.lineTo(this.x + 25 - xData - (35*this.scale),this.y - yData + 40 - (28*this.scale));
+        ctx.moveTo(this.x - xData + 50 - (33*this.scale),this.y - yData + 85 + (15*this.scale));
+        ctx.lineTo(this.x - xData + 50 + (33*this.scale),this.y - yData + 85 + (15*this.scale));
+        ctx.lineTo(this.x - xData + 50 + (52*this.scale),this.y - yData + 85 - (42*this.scale));
+        ctx.lineTo(this.x - xData + 50,this.y - yData + 85 - (82*this.scale));
+        ctx.lineTo(this.x - xData + 50 - (52*this.scale),this.y - yData + 85 - (42*this.scale));
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
         ctx.fillStyle = "white";
         ctx.font = "bold 20px sans-serif";
-        ctx.fillText(this.operand1.toString() + " x " + this.operand2.toString(),this.x - xData,this.y - yData +20);
-        this.healthBar.draw(xData,yData);
+        ctx.fillText(this.operand1.toString() + " x " + this.operand2.toString(),this.x - xData + this.width/4,this.y - yData + this.height/2);
+
+        if(DEBUG.showHitboxes){
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(this.x - xData,this.y - yData,this.width,this.height);
+        }
+
+        this.healthBar.draw(xData - 25,yData);
     }
     getActualPoints(){
         return 500;
@@ -956,7 +1035,7 @@ class Game{
         this.projRemovalList = [];
         this.removeTextList = [];
         this.getResultPoints = false; //whether or not point values are replaced by operation results.
-        this.distanceTreshold = 120; //this value represents the minimum distance two objects can have without colliding
+        this.distanceTreshold = 50; //this value represents the minimum distance two objects can have without colliding
     }
     Render(){
         this.map.draw(this.player);
@@ -1001,7 +1080,7 @@ class Game{
     objectCollisionUpdate(){
         for(let index1 = 0; index1 < this.objects.length; index1++){
             for(let index2 = index1+1; index2 < this.objects.length; index2++){
-                if(dist(this.objects[index1].x,this.objects[index2].x,this.objects[index1].y,this.objects[index2].y) < this.distanceTreshold){
+                if(dist(this.objects[index1].x,this.objects[index2].x,this.objects[index1].y,this.objects[index2].y) < (this.objects[index1].scale + this.objects[index2].scale) * this.distanceTreshold){
                     //push objects in the opposite direction.
                     this.objects[index1].addForceFrom(this.objects[index2].x,this.objects[index2].y);
                     this.objects[index2].addForceFrom(this.objects[index1].x,this.objects[index1].y);
@@ -1109,13 +1188,12 @@ class Game{
         }
         this.removalList = [];
         this.objectCollisionUpdate();
-        this.projectileCollisionUpdate();
         this.hitTextUpdate();
     }
     PlayerUpdate(){
         this.player.healthBar.regenUpdate(this.player.isAlive);
-        this.player.MovementUpdate();
         this.player.AttackCD();
+        this.player.attackAnimation();
     }
     
 }
@@ -1153,14 +1231,18 @@ function animate(){
         deltaTime = 0;
         handleInput();
         MainGame.objectMovementUpdate();
-        MainGame.projectileMovementUpdate();
+        
         if(!MainGame.player.enableAimBot)
             MainGame.player.rotateGuns(mouse.x,mouse.y);
+        MainGame.player.MovementUpdate();
+        MainGame.projectileMovementUpdate();
+        MainGame.projectileCollisionUpdate();
     }
-    if(deltaTime2 > 3){ //code here will execute slower compared to deltaTime 1
+    if(deltaTime2 > 2){ //code here will execute slower compared to deltaTime 1
         deltaTime2 = 0;
-        MainGame.CollisionUpdate();
         MainGame.PlayerUpdate();
+        
+        MainGame.CollisionUpdate();
     }
 }
 
