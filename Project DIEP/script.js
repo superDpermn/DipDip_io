@@ -10,7 +10,7 @@ canvas.height = window.innerHeight;
 //your code here
 
 const DEBUG = {
-    showHitboxes:true
+    showHitboxes:false
 }
 
 function thisWayUp(keyCode){
